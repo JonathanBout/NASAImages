@@ -66,7 +66,7 @@
     <value>0, 0</value>
   </data>
   <data name="MainPicture.Size" type="System.Drawing.Size, System.Drawing">
-    <value>631, 426</value>
+    <value>619, 426</value>
   </data>
   <assembly alias="mscorlib" name="mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" />
   <data name="MainPicture.TabIndex" type="System.Int32, mscorlib">
@@ -88,7 +88,7 @@
     <value>Bottom, Right</value>
   </data>
   <data name="NextButton.Location" type="System.Drawing.Point, System.Drawing">
-    <value>455, 432</value>
+    <value>443, 432</value>
   </data>
   <data name="NextButton.Size" type="System.Drawing.Size, System.Drawing">
     <value>70, 23</value>
@@ -115,7 +115,7 @@
     <value>Bottom, Right</value>
   </data>
   <data name="PreviousButton.Location" type="System.Drawing.Point, System.Drawing">
-    <value>531, 432</value>
+    <value>519, 432</value>
   </data>
   <data name="PreviousButton.Size" type="System.Drawing.Size, System.Drawing">
     <value>88, 23</value>
@@ -172,7 +172,7 @@
     <value>Right</value>
   </data>
   <data name="DatePicker.Location" type="System.Drawing.Point, System.Drawing">
-    <value>208, 432</value>
+    <value>202, 432</value>
   </data>
   <data name="DatePicker.Size" type="System.Drawing.Size, System.Drawing">
     <value>200, 23</value>
@@ -226,7 +226,7 @@
     <value>7, 15</value>
   </data>
   <data name="$this.ClientSize" type="System.Drawing.Size, System.Drawing">
-    <value>631, 461</value>
+    <value>619, 461</value>
   </data>
   <data name="$this.Icon" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
     <value>
