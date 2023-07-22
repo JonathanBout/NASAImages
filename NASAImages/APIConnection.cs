@@ -6,56 +6,51 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using NASAImages.Results;
-//using RestSharp;
 using Newtonsoft.Json;
 
 namespace NASAImages
 {
-    public class APIConnection
-    {
-        public string URL { get; init; }
-        readonly HttpClient client;
-        public APIConnection(string url)
-        {
-            URL = url;
-            client = new HttpClient()
-            {
-                BaseAddress = new Uri(URL)
-            };
-        }
+	public class APIConnection : IDisposable
+	{
+		public string URL { get; init; }
+		private readonly HttpClient client;
+		public APIConnection(string url)
+		{
+			URL = url;
+			client = new HttpClient()
+			{
+				BaseAddress = new Uri(URL)
+			};
+		}
 
-        public HttpResponseMessage GetRequest(string endpoint)
-        {
-            return client.GetAsync(endpoint).GetAwaiter().GetResult();
-        }
+		public Task<HttpResponseMessage> GetRequestAsync(string endpoint) => client.GetAsync(endpoint);
 
-        public APODResult? GetImageRequest(string endpoint, string apiKey, DateTime? date)
-        {
-            string fullEndpoint = URL + endpoint + $"?api_key={apiKey}" + (date is not null ? $"&date={date?.ToString("yyyy-MM-dd")}" : "");
-            HttpResponseMessage response = GetRequest(fullEndpoint);
-            HttpContent content = response.Content;
-            using (StreamReader reader = new StreamReader(content.ReadAsStream()))
-            {
-                string json = reader.ReadToEnd();
-                return JsonConvert.DeserializeObject<APODResult>(json);
-            }
-        }
+		public async Task<APODData?> GetImageDataAsync(string endpoint, string apiKey, DateTime? date)
+		{
+			string fullEndpoint = URL + endpoint + $"?api_key={apiKey}" + (date is not null ? $"&date={date?.ToString("yyyy-MM-dd")}" : "");
+			using var response = await GetRequestAsync(fullEndpoint);
+			return JsonConvert.DeserializeObject<APODData>(await response.Content.ReadAsStringAsync());
+		}
 
-        public Image GetPicture(string endpoint, string apiKey, DateTime? date)
-        {
-            string fullEndpoint = URL + endpoint + $"?api_key={apiKey}" + (date is not null ? $"&date={date?.ToString("yyyy-MM-dd")}" : "");
-            HttpResponseMessage response = GetRequest(fullEndpoint);
-            HttpContent content = response.Content;
-            return Image.FromStream(content.ReadAsStream());
-        }
+		public async Task DownloadImageAsync(APODData data, bool hd, string targetPath)
+		{
+			var url = hd ? data.HDUrl : data.Url;
+			using var response = await client.GetAsync(url);
+			using var stream = await response.Content.ReadAsStreamAsync();
+			using var image = Image.FromStream(stream);
+			string extension = Path.GetExtension(targetPath);
+			var format = extension.ToLower() switch
+			{
+				".jpeg" or ".jpg" => ImageFormat.Jpeg,
+				_ => ImageFormat.Png,
+			};
+			image.Save(targetPath, format);
+		}
 
-        public void Download(string url, string targetPath)
-        {
-            Uri uri = new Uri(url);
-            HttpClient downloadClient = new HttpClient();
-            var image = downloadClient.GetAsync(uri).GetAwaiter().GetResult();
-            Image img = Image.FromStream(image.Content.ReadAsStream());
-            img.Save(targetPath, ImageFormat.Png);
-        }
-    }
+		public void Dispose()
+		{
+			client.Dispose();
+			GC.SuppressFinalize(this);
+		}
+	}
 }

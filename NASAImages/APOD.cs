@@ -1,27 +1,39 @@
 using NASAImages.Results;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
 
 namespace NASAImages
 {
 	public partial class APOD : Form
 	{
-		readonly APIConnection connection;
-		readonly string APIKey = "IGaMqQV6XKQIBQFN5jtdI2Jcbt8WyacP0whXpjvO";
-		public APODResult? result;
-		public DateTime currentDate
-        {
+		private readonly APIConnection connection;
+		private readonly string APIKey = "IGaMqQV6XKQIBQFN5jtdI2Jcbt8WyacP0whXpjvO";
+		private readonly SemaphoreSlim semaphore = new(1, 1);
+		private DateTime? selectedDate;
+		private APODData? currentImageData;
+		public DateTime SelectedDate
+		{
 			get
-            {
-				return _currentDate;
-            }set
-            {
-				_currentDate = value;
+			{
+				return selectedDate ??= DateTime.Today;
+			}
+			set
+			{
+				selectedDate = value;
+				if (value.Date == DateTime.Today)
+				{
+					NextButton.Enabled = false;
+				} else
+				{
+					NextButton.Enabled = true;
+				}
 				DatePicker.Value = value;
-            }
-        }
-		DateTime _currentDate = DateTime.Today;
-		bool isRunning = false;
-		int switches = 0;
-		bool forward;
+			}
+		}
+
+
+
 		public APOD()
 		{
 			InitializeComponent();
@@ -29,133 +41,132 @@ namespace NASAImages
 			DatePicker.Format = DateTimePickerFormat.Custom;
 			DatePicker.CustomFormat = "dd-MM-yyyy";
 			connection = new APIConnection("https://api.nasa.gov/");
-			SetImageFromAPI();
+			SelectedDate = DateTime.Today;
 		}
 
-		private void NextButton_Click(object sender, EventArgs e)
+		protected override void OnHandleCreated(EventArgs e)
 		{
-			currentDate += TimeSpan.FromDays(1);
-			forward = true;
-			SetImageFromAPI();
+			base.OnHandleCreated(e);
+			_ = SetImageFromAPI();
 		}
 
-		private void PreviousButton_Click(object sender, EventArgs e)
+		private async void NextButton_Click(object sender, EventArgs e)
 		{
-			currentDate -= TimeSpan.FromDays(1);
-			forward = false;
-			SetImageFromAPI();
+			SelectedDate += TimeSpan.FromDays(1);
+			await SetImageFromAPI();
 		}
-
-		public void SetImageFromAPI()
+		private async void PreviousButton_Click(object sender, EventArgs e)
 		{
-			if (isRunning) { return; }
-			isRunning = true;
+			SelectedDate -= TimeSpan.FromDays(1);
+			await SetImageFromAPI();
+		}
+		private async void DownloadButton_Click(object sender, EventArgs e) => await SaveImage(false);
+		private async void DownloadHDButton_Click(object sender, EventArgs e) => await SaveImage(true);
 
-			Cursor.Current = Cursors.WaitCursor;
-			result = connection.GetImageRequest("planetary/apod", APIKey, currentDate);
+		private async Task SaveImage(bool hd)
+		{
+			SetCursor(Cursors.WaitCursor);
+			string? selectedUrl = hd ? currentImageData?.HDUrl : currentImageData?.Url;
 
-			if (result is null || string.IsNullOrEmpty(result.Url))
+			if (currentImageData is null || selectedUrl is null)
 			{
-				Cursor.Current = Cursors.Default;
-				MessageBox.Show("Failed to retrieve the image.");
-				isRunning = false;
+				MessageBox.Show("Can't download this picture.");
 				return;
 			}
 
-			if (currentDate >= DateTime.Today)
+			var invalidChars = Path.GetInvalidFileNameChars();
+
+			string fileName = new string(currentImageData.Title.Select(x => invalidChars.Contains(x) ? '-' : x).ToArray()).Replace(' ', '-');
+
+			if (hd)
 			{
-				NextButton.Hide();
-				currentDate = DateTime.Today;
+				fileName += "-hd";
 			}
-			else
+			fileName += ".png";
+			fileName = MultipleDashesRegex().Replace(fileName, "-");
+			string fullSavePath = GetSavePath(fileName);
+			if (!string.IsNullOrEmpty(fullSavePath))
 			{
-				NextButton.Show();
+				await connection.DownloadImageAsync(currentImageData, hd, fullSavePath);
+				Process.Start("explorer.exe", Directory.GetParent(fullSavePath)?.FullName ?? fullSavePath)
+					.Dispose();
 			}
-			DatePicker.Value = currentDate;
+			SetCursor(Cursors.Default);
+		}
+
+		private async void DatePicker_ValueChanged(object sender, EventArgs e)
+		{
+			SelectedDate = DatePicker.Value;
+			await SetImageFromAPI();
+		}
+
+		public async Task SetImageFromAPI()
+		{
+			await semaphore.WaitAsync();
+			SetCursor(Cursors.WaitCursor);
 			try
 			{
-				MainPicture.Image = result.GetImage();
-			}
-			catch (Exception)
-			{
-				MainPicture.Image = MainPicture.ErrorImage;
-				DownloadButton.Hide();
-				DownloadHDButton.Hide();
-				isRunning = false;
-				if (switches < 3)
-                {
-					switches++;
-					if (!forward)
-						currentDate -= TimeSpan.FromDays(1);
-					else
-						currentDate += TimeSpan.FromDays(1);
-					SetImageFromAPI();
-                }else
-                {
-					Cursor.Current = Cursors.Default;
+				currentImageData = await connection.GetImageDataAsync("planetary/apod", APIKey, SelectedDate);
+				string? url = currentImageData?.Url;
+				if (string.IsNullOrEmpty(url))
+				{
+					if (string.IsNullOrEmpty(currentImageData?.HDUrl) || currentImageData is null)
+					{
+						MessageBox.Show("Failed to retrieve the image.");
+					} else
+					{
+						url = currentImageData.HDUrl;
+					}
 				}
-				return;
-			}
-			switches = 0;
-			Cursor.Current = Cursors.Default;
-			Width = MainPicture.Image.Width;
-			Height = MainPicture.Image.Height + 25;
-			Screen screen = Screen.FromControl(this);
-			Height = Math.Min(Height, screen.WorkingArea.Height);
-			Width = Math.Min(Width, screen.WorkingArea.Width);
-			MainPicture.Refresh();
-			DownloadButton.Show();
-			DownloadHDButton.Show();
-			isRunning = false;
-		}
 
-		private void DownloadButton_Click(object sender, EventArgs e)
-		{
-			Cursor.Current = Cursors.WaitCursor;
-			if (result is null || result.Url is null)
+				if (SelectedDate > DateTime.Today)
+				{
+					SelectedDate = DateTime.Today;
+				}
+				DatePicker.Value = SelectedDate;
+				MainPicture.ImageLocation = url ?? "";
+				Invoke(() =>
+				{
+					SetCursor(Cursors.Default);
+					MainPicture.Refresh();
+				});
+			} finally
 			{
-				MessageBox.Show("Can't download this picture.");
-				return;
+				semaphore.Release();
 			}
-			string fullSavePath = Path.Join(GetSavePath(), result.Title.Replace(' ', '-') + ".*");
-			connection.Download(result.Url, fullSavePath);
-			Cursor.Current = Cursors.Default;
-			MessageBox.Show("Download Completed!");
 		}
-		private void DownloadHDButton_Click(object sender, EventArgs e)
-		{
-			Cursor.Current = Cursors.WaitCursor;
 
-			if (result is null || result.HDUrl is null)
+		static string GetSavePath(string defaultFileName)
+		{
+			SaveFileDialog dialog = new()
 			{
-				MessageBox.Show("Can't download this picture.");
-				return;
-			}
-			string fullSavePath = Path.Join(GetSavePath(), result.Title.Replace(' ', '-') + ".png");
-			connection.Download(result.HDUrl, fullSavePath);
-			Cursor.Current = Cursors.Default;
-			MessageBox.Show("Download Completed!");
-		}
+				InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+				AddExtension = true,
+				DefaultExt = "png",
+				Filter = "Portable Network Graphics (*.png)|*.png|Joint Photographic Experts Group (*.jpeg)|*.jpeg",
+				FileName = defaultFileName
+			};
 
-        static string GetSavePath()
-		{
-			FolderBrowserDialog dialog = new FolderBrowserDialog();
-			dialog.RootFolder = Environment.SpecialFolder.MyPictures;
-			dialog.ShowNewFolderButton = true;
 			if (dialog.ShowDialog() == DialogResult.OK)
 			{
-				return dialog.SelectedPath;
-			}
-			else
+				return dialog.FileName;
+			} else
 			{
 				return "";
 			}
 		}
-
-		private void DatePicker_ValueChanged(object sender, EventArgs e)
+		void SetCursor(Cursor cursor)
 		{
-			currentDate = DatePicker.Value;
-			SetImageFromAPI();
+			// make sure handle is created
+			var h = Handle;
+			h.ToString();
+			Invoke(() =>
+			{
+				Cursor = cursor;
+			});
 		}
-    }
+
+		[GeneratedRegex("-{2,}", RegexOptions.Compiled)]
+		private static partial Regex MultipleDashesRegex();
+	}
 }
